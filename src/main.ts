@@ -59,7 +59,13 @@ export default class WebClippersPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const saved = await this.loadData() || {};
+		// 迁移：旧版本 savePath 为根目录或旧默认值时，升级到新默认值
+		const oldPaths = ['', '/', 'Easy Web Clipper'];
+		if (!saved.savePath || oldPaths.includes(saved.savePath)) {
+			saved.savePath = DEFAULT_SETTINGS.savePath;
+		}
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 	}
 
 	async saveSettings() {
@@ -84,11 +90,12 @@ class WebClipperModal extends Modal {
 		contentEl.empty();
 		contentEl.addClass('easy-web-clipper-modal');
 
-		// 设置 modal 宽度（保证 URL 能完整显示，又不超出屏幕）
+		// 设置 modal 尺寸（保证 URL 能完整显示，移动端适配）
 		const modalEl = this.modalEl;
 		if (modalEl) {
 			modalEl.style.width = '560px';
 			modalEl.style.maxWidth = '90vw';
+			modalEl.style.maxHeight = '85vh';
 		}
 		contentEl.style.width = '100%';
 		contentEl.style.boxSizing = 'border-box';
@@ -221,7 +228,7 @@ class WebClippersSettingTab extends PluginSettingTab {
 		// 文本输入框
 		saveSetting.addText((text) =>
 			text
-				.setPlaceholder('Easy Web Clipper')
+				.setPlaceholder('EasyWebClipper')
 				.setValue(this.plugin.settings.savePath)
 				.onChange(async (value) => {
 					this.plugin.settings.savePath = value || DEFAULT_SETTINGS.savePath;

@@ -8,7 +8,7 @@ export interface WebClippersSettings {
 }
 
 export const DEFAULT_SETTINGS: WebClippersSettings = {
-  savePath: 'Easy Web Clipper',
+  savePath: 'EasyWebClipper',
   fileNameTemplate: '{{title}}',
   includeFrontMatter: true,
   includeSourceUrl: true,
