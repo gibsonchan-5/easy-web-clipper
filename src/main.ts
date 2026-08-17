@@ -165,7 +165,7 @@ class WebClipperModal extends Modal {
 
 		contentEl.appendChild(actions);
 
-		urlInput.focus();
+		// 不自动 focus，避免移动端弹出虚拟键盘遮挡底部按钮
 	}
 
 	async doClip() {
