@@ -1,4 +1,106 @@
 /* Easy Web Clipper Styles */
+
+/* ---------- 可拖拽 / 可缩放的剪藏窗口 ---------- */
+
+/* 关闭 Obsidian 默认的居中布局，改由插件自己控制窗口坐标 */
+.ewc-modal-container {
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  padding: 0 !important;
+}
+
+.ewc-modal {
+  position: fixed !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  max-width: none !important;
+  display: flex !important;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 10px;
+  /* 高度由内容决定，上限由 JS 按屏幕高度设置 */
+}
+
+/* 顶部标题栏：拖拽把手 */
+.ewc-modal .ewc-modal-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  color: var(--text-normal);
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: 10px 10px 0 0;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.ewc-modal .ewc-modal-header:active {
+  cursor: grabbing;
+}
+
+/* 内容区：窗口变小时内部滚动，不截断内容 */
+.ewc-modal > .ewc-modal-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+}
+
+/* 缩放手柄：只有左右两条边（宽度可调，高度自适应） */
+.ewc-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  touch-action: none;
+}
+
+.ewc-resize-w { left: 0; width: 10px; cursor: ew-resize; }
+.ewc-resize-e { right: 0; width: 10px; cursor: ew-resize; }
+
+/* 拖拽 / 缩放过程中禁止选中文字 */
+body.ewc-dragging,
+body.ewc-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  cursor: grabbing !important;
+}
+
+body.ewc-resizing,
+body.ewc-resizing * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+body.ewc-resizing-e, body.ewc-resizing-w, body.ewc-resizing-e *, body.ewc-resizing-w * { cursor: ew-resize !important; }
+
+/* 移动端：窗口不超出屏幕，内容同样可滚动 */
+@media (max-width: 600px) {
+  .ewc-modal {
+    border-radius: 12px;
+  }
+  .ewc-modal .ewc-modal-header {
+    padding: 10px 14px;
+  }
+  .ewc-modal > .ewc-modal-content {
+    padding: 14px;
+  }
+}
+
+/* 兼容旧版本的 contentEl 类名 */
 .easy-web-clipper-modal {
   padding: 0;
 }

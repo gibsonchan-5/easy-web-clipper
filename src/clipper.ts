@@ -43,14 +43,26 @@ export async function fetchWebPage(url: string): Promise<string> {
 
 /**
  * 后清洗：对 Readability / 微信提取器输出的 HTML 做二次清理
- * 去除备案号、版权声明、多余空段落等
+ * 去除备案号、版权声明、多余空段落、占位元素等
  */
 function cleanExtractedContent(html: string, url: string): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
 
+  // 判断元素是否"视觉为空"：忽略 NBSP(\u00a0)、全角空格(\u3000)、零宽字符(\u200b-\u200d)、纯 <br>
+  const isVisuallyEmpty = (el: Element): boolean => {
+    if (el.querySelector('img, video, audio, canvas, svg, pre, code')) return false;
+    const text = el.textContent || '';
+    const stripped = text.replace(/[\s\u00a0\u3000\u200b-\u200d\ufeff]/g, '');
+    if (stripped.length > 0) return false;
+    const nonBr = Array.from(el.children).filter(
+      (c) => c.tagName.toLowerCase() !== 'br'
+    );
+    return nonBr.length === 0;
+  };
+
   // 移除备案号
-  doc.querySelectorAll('p, div, section').forEach(el => {
+  doc.querySelectorAll('p, div, section').forEach((el) => {
     const text = el.textContent?.trim() || '';
     if (/^(京|沪|粤|浙|苏|鲁|川|渝|鄂|湘|豫|冀|闽|皖|赣|陕|黔|滇|黑|吉|辽|晋|蒙|新|藏|青|宁|甘|桂|津)?ICP(备|证)?\d+/.test(text)) {
       el.remove();
@@ -58,30 +70,52 @@ function cleanExtractedContent(html: string, url: string): string {
   });
 
   // 移除版权声明
-  doc.querySelectorAll('p, div').forEach(el => {
+  doc.querySelectorAll('p, div').forEach((el) => {
     const text = el.textContent?.trim() || '';
     if (/^(Copyright|版权所有|All Rights Reserved)/i.test(text)) {
       el.remove();
     }
   });
 
-  // 移除空的块级元素（不含图片/视频/代码）
-  doc.querySelectorAll('div, section, p, span').forEach(el => {
-    if (el.textContent?.trim() === '' && !el.querySelector('img, video, audio, canvas, svg, pre, code')) {
-      el.remove();
+  // 移除视觉为空的块级元素（扩展 selector 覆盖 article/aside/figure 等容器）
+  doc.querySelectorAll(
+    'div, section, article, aside, main, header, footer, figure, figcaption, blockquote, ' +
+      'p, span, ul, ol, li, h1, h2, h3, h4, h5, h6, table, tr, td, th'
+  ).forEach((el) => {
+    if (isVisuallyEmpty(el)) el.remove();
+  });
+
+  // 移除"高度撑开但无可见文本"的 spacer
+  doc.querySelectorAll('[style*="height" i]').forEach((el) => {
+    if (isVisuallyEmpty(el)) el.remove();
+  });
+
+  // 移除空 src / 1x1 透明占位图
+  doc.querySelectorAll('img').forEach((img) => {
+    const src = img.getAttribute('src') || '';
+    if (!src) {
+      img.remove();
+      return;
     }
+    if (/data:image\/gif;base64,R0lGODlhAQABAIAAAP\/\/\/yH5BAEAAAAALAAAAAABAAEAAAIBRAA7/i.test(src)) {
+      img.remove();
+      return;
+    }
+    const w = img.getAttribute('width');
+    const h = img.getAttribute('height');
+    if (w === '1' && h === '1') img.remove();
   });
 
   // 移除过短的段落（可能是导航残留）
-  doc.querySelectorAll('p').forEach(p => {
-    const text = p.textContent?.trim() || '';
+  doc.querySelectorAll('p').forEach((p) => {
+    const text = (p.textContent || '').replace(/[\s\u00a0\u3000\u200b-\u200d\ufeff]/g, '');
     if (text.length > 0 && text.length < 8 && !p.querySelector('a, strong, em, code, img')) {
       p.remove();
     }
   });
 
   // 清理空链接和锚点链接
-  doc.querySelectorAll('a').forEach(a => {
+  doc.querySelectorAll('a').forEach((a) => {
     const href = a.getAttribute('href') || '';
     if (!href || href === '#' || href.startsWith('javascript:')) {
       a.replaceWith(...Array.from(a.childNodes));
@@ -205,6 +239,44 @@ function extractWeixinArticle(doc: Document, url: string): {
 }
 
 /**
+ * 把懒加载图片的 data-src / data-original 等属性提升为 src。
+ * 很多站点（人民网、新华网等）正文图只有 data-src、没有 src，
+ * 不提前提升会被 Readability / Turndown 当作"不可加载图片"丢弃。
+ */
+function resolveLazyImages(doc: Document, baseUrl: string): void {
+  const LAZY_ATTRS = [
+    'data-src', 'data-original', 'data-lazy-src', 'data-actualsrc',
+    'data-url', 'data-echo', 'data-original-src', 'data-src-original',
+  ];
+  doc.querySelectorAll('img').forEach((img) => {
+    const cur = img.getAttribute('src') || '';
+    // 已有真实 src 就跳过；1x1 占位 GIF / data:image 占位则继续找真图
+    const isPlaceholder = !cur ||
+      cur === 'about:blank' ||
+      cur.startsWith('data:image/gif') ||
+      (cur.startsWith('data:image') && cur.length < 100);
+    if (!isPlaceholder) return;
+
+    for (const attr of LAZY_ATTRS) {
+      const lazy = img.getAttribute(attr);
+      if (!lazy || lazy === 'about:blank' || lazy.startsWith('data:image') && lazy.length < 100) continue;
+      // 相对地址用页面 URL 补全为绝对地址
+      if (/^https?:\/\//i.test(lazy)) {
+        img.setAttribute('src', lazy);
+      } else {
+        try {
+          img.setAttribute('src', new URL(lazy, baseUrl).href);
+        } catch {
+          img.setAttribute('src', lazy);
+        }
+      }
+      img.removeAttribute(attr);
+      break;
+    }
+  });
+}
+
+/**
  * 使用 Readability 提取正文
  */
 export function extractArticle(html: string, url: string): {
@@ -223,6 +295,9 @@ export function extractArticle(html: string, url: string): {
     const base = doc.createElement('base');
     base.setAttribute('href', url);
     doc.head?.appendChild(base);
+
+    // 先提升懒加载图片 src，避免 Readability 丢弃正文图
+    resolveLazyImages(doc, url);
 
     // 先尝试微信公众号专用提取器（微信文章结构特殊，Readability 经常失败）
     if (url.includes('mp.weixin.qq.com')) {
@@ -276,7 +351,15 @@ export function htmlToMarkdown(html: string, settings: WebClippersSettings): str
     filter: 'img',
     replacement: (content, node) => {
       const img = node as HTMLImageElement;
-      const src = img.getAttribute('src') || '';
+      // src 缺失时用懒加载属性兜底（data-src / data-original / data-lazy-src 等）
+      let src = img.getAttribute('src') || '';
+      if (!src) {
+        src = img.getAttribute('data-src') ||
+          img.getAttribute('data-original') ||
+          img.getAttribute('data-lazy-src') ||
+          img.getAttribute('data-actualsrc') ||
+          img.getAttribute('data-url') || '';
+      }
       const alt = img.getAttribute('alt') || '';
       
       if (!src) return '';
@@ -318,8 +401,11 @@ export function htmlToMarkdown(html: string, settings: WebClippersSettings): str
   // 转换 HTML
   let markdown = turndownService.turndown(html);
 
-  // 清理多余的空行
+  // 清理多余的空行（连续 3+ 折成 2 个换行）
   markdown = markdown.replace(/\n{3,}/g, '\n\n');
+  // 去掉末尾的连续空行 / 空段落（修复 Obsidian 阅读模式把末尾空段渲染成大块留白的问题）
+  markdown = markdown.replace(/(?:\n[ \t\u00a0\u3000]*)+$/g, '');
+  if (markdown.length > 0 && !markdown.endsWith('\n')) markdown += '\n';
 
   return markdown;
 }

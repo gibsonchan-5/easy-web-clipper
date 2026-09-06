@@ -1,7 +1,7 @@
 {
   "id": "easy-web-clipper",
   "name": "Easy Web Clipper",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "minAppVersion": "0.15.0",
   "description": "Clip web pages to clean Markdown notes with one click. Auto-extracts main content, removes ads and navigation.",
   "author": "JC5",
