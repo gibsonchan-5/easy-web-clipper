@@ -93,6 +93,7 @@ class WebClipperModal extends Modal {
 	isProcessing: boolean = false;
 
 	private handleWindowResize = () => this.clampIntoViewport();
+	private handleGeometries: Array<{ handle: HTMLElement; dir: 'w' | 'e' }> = [];
 
 	constructor(app: App, plugin: WebClippersPlugin) {
 		super(app);
@@ -116,6 +117,10 @@ class WebClipperModal extends Modal {
 
 		this.buildContent(contentEl);
 		this.createResizeHandles(modalEl);
+
+		// 兜底：若 styles.css 未生效（例如手动部署时漏掉该文件），补上布局必需样式，
+		// 避免窗口退化成「固定居中、不能拖拽也不能缩放」。只设几何，不含任何颜色值。
+		this.ensureLayoutStyles();
 
 		// 恢复上次的窗口位置与尺寸（无记录则居中 + 内容自然高度）
 		this.applyInitialLayout();
@@ -280,12 +285,34 @@ class WebClipperModal extends Modal {
 
 	private createResizeHandles(modalEl: HTMLElement) {
 		const doc = this.containerEl.ownerDocument;
+		this.handleGeometries = [];
 
 		// 只保留左右两条边：宽度可调，高度由内容自适应
 		// 手柄的几何与光标由 styles.css 的 .ewc-resize-* 提供
 		for (const dir of ['w', 'e'] as const) {
 			const handle = modalEl.createDiv({ cls: ['ewc-resize-handle', `ewc-resize-${dir}`] });
 			handle.addEventListener('pointerdown', (e: PointerEvent) => this.startResize(e, doc, dir));
+			this.handleGeometries.push({ handle, dir });
+		}
+	}
+
+	/**
+	 * 兜底：仅当 styles.css 未生效时补写布局必需样式（不含任何颜色值）。
+	 * 正常环境下 styles.css 一定会加载，这里不会执行任何写入，
+	 * 因此既满足官方「不要硬编码样式」要求，也不会出现窗口无法拖拽/缩放的退化。
+	 */
+	private ensureLayoutStyles() {
+		const computed = this.modalEl.ownerDocument.defaultView?.getComputedStyle(this.modalEl);
+		if (computed && computed.position === 'fixed') return; // 样式表已生效，无需兜底
+
+		this.modalEl.style.cssText +=
+			';position:fixed;margin:0;max-width:none;display:flex;flex-direction:column;' +
+			'box-sizing:border-box;overflow:hidden;';
+		this.contentEl.style.cssText += ';flex:1 1 auto;overflow:auto;';
+		for (const { handle, dir } of this.handleGeometries) {
+			handle.style.cssText +=
+				`;position:absolute;top:0;bottom:0;${dir === 'w' ? 'left' : 'right'}:0;` +
+				'width:10px;cursor:ew-resize;touch-action:none;';
 		}
 	}
 
