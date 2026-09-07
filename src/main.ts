@@ -111,8 +111,8 @@ class WebClipperModal extends Modal {
 		titleEl.setText('网页剪藏');
 		contentEl.addClass('ewc-modal-content');
 
-		// 关键样式内联写入：即使 styles.css 未被加载，拖拽与缩放依然可用
-		this.applyCoreStyles();
+		// 窗口的静态样式全部由 styles.css 的 ewc-* 类提供（遵循官方「不要硬编码样式」要求）
+		// JS 只负责动态值：坐标、宽度、高度上限
 
 		this.buildContent(contentEl);
 		this.createResizeHandles(modalEl);
@@ -132,13 +132,12 @@ class WebClipperModal extends Modal {
 	// ---------- 内容 ----------
 
 	private buildContent(contentEl: HTMLElement) {
-		// URL 输入框（带边框）
-		const urlInput = document.createElement('input');
-		urlInput.type = 'text';
-		urlInput.placeholder = '粘贴网页链接';
-		urlInput.style.cssText = 'display:block;width:100%;min-width:0;box-sizing:border-box;border:1px solid var(--background-modifier-border);border-radius:6px;outline:none;background:var(--background-primary);font-size:14px;color:var(--text-normal);font-family:inherit;padding:10px 12px;margin-bottom:20px;';
-		urlInput.addEventListener('focus', () => { urlInput.style.borderColor = 'var(--interactive-accent)'; });
-		urlInput.addEventListener('blur', () => { urlInput.style.borderColor = 'var(--background-modifier-border)'; });
+		// URL 输入框（样式见 styles.css 的 .ewc-input）
+		const urlInput = contentEl.createEl('input', {
+			type: 'text',
+			cls: 'ewc-input',
+			attr: { placeholder: '粘贴网页链接' },
+		});
 
 		navigator.clipboard.readText().then(clipText => {
 			const url = extractUrl(clipText);
@@ -151,97 +150,21 @@ class WebClipperModal extends Modal {
 		urlInput.addEventListener('keydown', (e: KeyboardEvent) => {
 			if (e.key === 'Enter' && !this.isProcessing) this.doClip();
 		});
-		contentEl.appendChild(urlInput);
 
 		// 保存路径（只读文本 + 提示）
-		const saveLabel = document.createElement('div');
-		saveLabel.textContent = '保存至';
-		saveLabel.style.cssText = 'font-size:11px;font-weight:400;color:var(--text-muted);letter-spacing:0.08em;margin-bottom:4px;';
-		contentEl.appendChild(saveLabel);
-
-		const pathDisplay = document.createElement('div');
-		pathDisplay.textContent = this.settings.savePath;
-		pathDisplay.style.cssText = 'font-size:13px;color:var(--text-normal);margin-bottom:4px;overflow-wrap:anywhere;word-break:break-all;';
-		contentEl.appendChild(pathDisplay);
-
-		const saveHint = document.createElement('div');
-		saveHint.textContent = '可在设置中修改默认保存路径';
-		saveHint.style.cssText = 'font-size:11px;color:var(--text-faint);margin-bottom:20px;';
-		contentEl.appendChild(saveHint);
+		contentEl.createDiv({ cls: 'ewc-label', text: '保存至' });
+		contentEl.createDiv({ cls: 'ewc-path', text: this.settings.savePath });
+		contentEl.createDiv({ cls: 'ewc-hint', text: '可在设置中修改默认保存路径' });
 
 		// 底部按钮（窄窗口时自动换行，不会被截断）
-		const actions = document.createElement('div');
-		actions.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--background-modifier-border);';
+		// 主按钮复用 Obsidian 内置的 .mod-cta 样式，避免硬编码颜色
+		const actions = contentEl.createDiv({ cls: 'ewc-actions' });
 
-		const cancelBtn = document.createElement('span');
-		cancelBtn.textContent = '取消';
-		cancelBtn.style.cssText = 'display:inline-block;flex:0 0 auto;font-size:13px;color:var(--text-muted);cursor:pointer;padding:8px 20px;border:1px solid var(--background-modifier-border);border-radius:6px;background:transparent;user-select:none;';
+		const cancelBtn = actions.createEl('button', { cls: 'ewc-btn', text: '取消' });
 		cancelBtn.addEventListener('click', () => this.close());
-		cancelBtn.addEventListener('mouseenter', () => { cancelBtn.style.color = 'var(--text-normal)'; });
-		cancelBtn.addEventListener('mouseleave', () => { cancelBtn.style.color = 'var(--text-muted)'; });
-		actions.appendChild(cancelBtn);
 
-		const clipBtn = document.createElement('span');
-		clipBtn.textContent = '剪藏';
-		clipBtn.style.cssText = 'display:inline-block;flex:0 0 auto;font-size:13px;font-weight:500;color:#fff;cursor:pointer;padding:8px 24px;border:none;border-radius:6px;background:#2e7d32;user-select:none;';
+		const clipBtn = actions.createEl('button', { cls: 'ewc-btn mod-cta', text: '剪藏' });
 		clipBtn.addEventListener('click', () => this.doClip());
-		clipBtn.addEventListener('mouseenter', () => { clipBtn.style.opacity = '0.85'; });
-		clipBtn.addEventListener('mouseleave', () => { clipBtn.style.opacity = '1'; });
-		actions.appendChild(clipBtn);
-
-		contentEl.appendChild(actions);
-
-		// 不自动 focus，避免移动端弹出虚拟键盘遮挡底部按钮
-	}
-
-	// ---------- 核心样式（内联，保证不依赖 styles.css） ----------
-
-	private applyCoreStyles() {
-		const { modalEl, containerEl, titleEl, contentEl } = this;
-
-		// 容器：取消 Obsidian 默认的居中
-		containerEl.style.setProperty('align-items', 'flex-start', 'important');
-		containerEl.style.setProperty('justify-content', 'flex-start', 'important');
-		containerEl.style.setProperty('padding', '0', 'important');
-
-		// 窗口本体：固定定位 + 纵向 flex（标题栏固定，内容区自适应）
-		const modal: CSSStyleDeclaration = modalEl.style;
-		modal.setProperty('position', 'fixed', 'important');
-		modal.setProperty('margin', '0', 'important');
-		modal.setProperty('padding', '0', 'important');
-		modal.setProperty('max-width', 'none', 'important');
-		modal.setProperty('display', 'flex', 'important');
-		modal.setProperty('flex-direction', 'column', 'important');
-		modal.boxSizing = 'border-box';
-		modal.overflow = 'hidden';
-		// 高度由内容决定（不可手动调整），超高时内容区滚动
-		modal.setProperty('height', 'auto', 'important');
-
-		// 标题栏：拖拽把手
-		const header: CSSStyleDeclaration = titleEl.style;
-		header.setProperty('flex', '0 0 auto', 'important');
-		header.setProperty('display', 'flex', 'important');
-		header.alignItems = 'center';
-		header.padding = '12px 16px';
-		header.fontSize = '13px';
-		header.fontWeight = '500';
-		header.letterSpacing = '0.04em';
-		header.cursor = 'grab';
-		header.setProperty('user-select', 'none', 'important');
-		header.setProperty('-webkit-user-select', 'none', 'important');
-		header.touchAction = 'none';
-		header.borderBottom = '1px solid var(--background-modifier-border)';
-		header.background = 'var(--background-secondary)';
-
-		// 内容区：窗口变小时内部滚动，不截断
-		const content: CSSStyleDeclaration = contentEl.style;
-		content.setProperty('flex', '1 1 auto', 'important');
-		content.minHeight = '0';
-		content.minWidth = '0';
-		content.margin = '0';
-		content.padding = '16px';
-		content.overflow = 'auto';
-		content.boxSizing = 'border-box';
 	}
 
 	// ---------- 布局：位置 / 宽度 ----------
@@ -359,20 +282,10 @@ class WebClipperModal extends Modal {
 		const doc = this.containerEl.ownerDocument;
 
 		// 只保留左右两条边：宽度可调，高度由内容自适应
-		// 手柄几何全部内联，不依赖 styles.css
-		const specs: Array<{ dir: 'w' | 'e'; css: string }> = [
-			{ dir: 'w', css: 'left:0;top:0;bottom:0;width:10px;' },
-			{ dir: 'e', css: 'right:0;top:0;bottom:0;width:10px;' },
-		];
-
-		for (const spec of specs) {
-			const handle = doc.createElement('div');
-			handle.className = `ewc-resize-handle ewc-resize-${spec.dir}`;
-			handle.style.cssText =
-				'position:absolute;top:0;bottom:0;z-index:20;touch-action:none;' +
-				'background:transparent;cursor:ew-resize;' + spec.css;
-			handle.addEventListener('pointerdown', (e: PointerEvent) => this.startResize(e, doc, spec.dir));
-			modalEl.appendChild(handle);
+		// 手柄的几何与光标由 styles.css 的 .ewc-resize-* 提供
+		for (const dir of ['w', 'e'] as const) {
+			const handle = modalEl.createDiv({ cls: ['ewc-resize-handle', `ewc-resize-${dir}`] });
+			handle.addEventListener('pointerdown', (e: PointerEvent) => this.startResize(e, doc, dir));
 		}
 	}
 

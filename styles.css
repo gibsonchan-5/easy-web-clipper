@@ -14,12 +14,13 @@
   margin: 0 !important;
   padding: 0 !important;
   max-width: none !important;
+  /* 高度由内容决定，不可手动调整；上限由 JS 按屏幕高度设置 */
+  height: auto !important;
   display: flex !important;
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
   border-radius: 10px;
-  /* 高度由内容决定，上限由 JS 按屏幕高度设置 */
 }
 
 /* 顶部标题栏：拖拽把手 */
@@ -59,12 +60,75 @@
   box-sizing: border-box;
 }
 
+/* ---------- 窗口内容：输入框 / 路径 / 按钮 ---------- */
+
+.ewc-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-bottom: 20px;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text-normal);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.ewc-input:focus {
+  border-color: var(--interactive-accent);
+}
+
+.ewc-label {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.ewc-path {
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.ewc-hint {
+  margin-bottom: 20px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.ewc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* 使用 Obsidian 原生按钮外观（主按钮 .mod-cta），不硬编码颜色 */
+.ewc-btn {
+  flex: 0 0 auto;
+  cursor: pointer;
+  user-select: none;
+}
+
 /* 缩放手柄：只有左右两条边（宽度可调，高度自适应） */
 .ewc-resize-handle {
   position: absolute;
   top: 0;
   bottom: 0;
   z-index: 20;
+  background: transparent;
   touch-action: none;
 }
 

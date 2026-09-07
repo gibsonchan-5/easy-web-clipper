@@ -1,9 +1,9 @@
 {
   "id": "easy-web-clipper",
   "name": "Easy Web Clipper",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "minAppVersion": "0.15.0",
-  "description": "Clip web pages into clean Markdown notes inside Obsidian with one click. Auto-extracts main content, removes ads and navigation.",
+  "description": "Clip web pages to clean Markdown notes with one click. Auto-extracts main content, removes ads and navigation.",
   "author": "JC5",
   "authorUrl": "https://github.com/gibsonchan-5",
   "isDesktopOnly": false
