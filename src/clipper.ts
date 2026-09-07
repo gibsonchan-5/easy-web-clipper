@@ -51,6 +51,11 @@ function cleanExtractedContent(html: string, url: string): string {
 
   // 判断元素是否"视觉为空"：忽略 NBSP(\u00a0)、全角空格(\u3000)、零宽字符(\u200b-\u200d)、纯 <br>
   const isVisuallyEmpty = (el: Element): boolean => {
+    // 媒体/替换元素自身即内容，绝不能当作空元素删除
+    // （微信提取器会给图片写内联 style="height:auto"，若无此判断会被下面的 spacer 规则误杀）
+    if (/^(img|picture|source|video|audio|canvas|svg|iframe|embed|object|input|textarea|hr|br|pre|code|table)$/i.test(el.tagName)) {
+      return false;
+    }
     if (el.querySelector('img, video, audio, canvas, svg, pre, code')) return false;
     const text = el.textContent || '';
     const stripped = text.replace(/[\s\u00a0\u3000\u200b-\u200d\ufeff]/g, '');
@@ -100,6 +105,17 @@ function cleanExtractedContent(html: string, url: string): string {
     if (/data:image\/gif;base64,R0lGODlhAQABAIAAAP\/\/\/yH5BAEAAAAALAAAAAABAAEAAAIBRAA7/i.test(src)) {
       img.remove();
       return;
+    }
+    // 仍停留在 1x1 svg 占位（说明没找到真图）时移除，避免笔记里出现空白图
+    if (/^data:image\/svg\+xml/i.test(src)) {
+      try {
+        if (/width=['"]?1(px)?['"]?/i.test(decodeURIComponent(src))) {
+          img.remove();
+          return;
+        }
+      } catch {
+        /* 解码失败则保留 */
+      }
     }
     const w = img.getAttribute('width');
     const h = img.getAttribute('height');
@@ -250,10 +266,11 @@ function resolveLazyImages(doc: Document, baseUrl: string): void {
   ];
   doc.querySelectorAll('img').forEach((img) => {
     const cur = img.getAttribute('src') || '';
-    // 已有真实 src 就跳过；1x1 占位 GIF / data:image 占位则继续找真图
+    // 已有真实 src 就跳过；1x1 占位 GIF / SVG / data:image 占位则继续找真图
     const isPlaceholder = !cur ||
       cur === 'about:blank' ||
       cur.startsWith('data:image/gif') ||
+      cur.startsWith('data:image/svg+xml') ||
       (cur.startsWith('data:image') && cur.length < 100);
     if (!isPlaceholder) return;
 
