@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, Modal } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, Modal, TFolder } from 'obsidian';
 import {
 	WebClippersSettings, DEFAULT_SETTINGS,
 	MODAL_MIN_WIDTH, MODAL_DEFAULT_WIDTH, MODAL_VIEWPORT_MARGIN, MODAL_RECT_VERSION,
@@ -395,10 +395,14 @@ class WebClippersSettingTab extends PluginSettingTab {
 		containerEl.createEl('h2', { text: 'Easy Web Clipper 设置' });
 
 		// 获取所有文件夹
+		// 直接枚举 TFolder 自身，而不是取条目的 f.parent.path：后者只能拿到「有子条目」的
+		// 文件夹的父级，空文件夹不会被任何条目带出来，因而永远不出现在下拉里。
+		// 这里用 getAllLoadedFiles() + TFolder（均为 @since 0.9.7）而不是 vault.getAllFolders()
+		// （@since 1.6.6），因为本插件 minAppVersion 为 0.15.0，需要兼容老版本 Obsidian。
 		const folderSet = new Set<string>();
-		this.app.vault.getAllLoadedFiles().forEach((f: any) => {
-			if (f.parent && typeof f.parent.path === 'string') {
-				folderSet.add(f.parent.path);
+		this.app.vault.getAllLoadedFiles().forEach((f) => {
+			if (f instanceof TFolder && !f.isRoot()) {
+				folderSet.add(f.path);
 			}
 		});
 		folderSet.add(''); // 根目录
