@@ -14,6 +14,9 @@ import { Readability } from '@mozilla/readability';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 import { WebClippersSettings } from './settings';
+import { isZhihuUrl, fetchZhihuRenderedHtml } from './zhihu';
+import { isXhsUrl, extractXhsArticle, localizeXhsImages } from './xhs';
+import { isWeiboUrl, extractWeiboArticle, localizeWeiboImages } from './weibo';
 
 /**
  * 抓取网页 HTML
@@ -137,6 +140,56 @@ function cleanExtractedContent(html: string, url: string): string {
       a.replaceWith(...Array.from(a.childNodes));
     }
   });
+
+  // 展平同类嵌套的强调标签：微信公众号文章常见 <strong> 里再套 <strong>/<b>
+  //（编辑器排版叠加所致），Turndown 会给每层各打一对 **，产出「****情****」这类损坏的强调。
+  // 加粗家族（strong/b）与斜体家族（em/i）各视为同类，内层解包；从外到内可能多层嵌套，循环到无变化。
+  const sameEmphasis = (a: string, b: string): boolean => {
+    const bold = (t: string) => t === 'STRONG' || t === 'B';
+    const italic = (t: string) => t === 'EM' || t === 'I';
+    return (bold(a) && bold(b)) || (italic(a) && italic(b));
+  };
+  const hasSameEmphasisAncestor = (el: Element): boolean => {
+    let p = el.parentElement;
+    while (p) {
+      if (sameEmphasis(p.tagName, el.tagName)) return true;
+      p = p.parentElement;
+    }
+    return false;
+  };
+  let flattened = true;
+  while (flattened) {
+    flattened = false;
+    for (const el of Array.from(doc.querySelectorAll('strong, b, em, i'))) {
+      if (el.isConnected && hasSameEmphasisAncestor(el)) {
+        el.replaceWith(...Array.from(el.childNodes));
+        flattened = true;
+      }
+    }
+  }
+
+  // 合并紧邻的同级强调标签：<strong>a</strong><strong>b</strong> → <strong>ab</strong>。
+  // Turndown 对这种相邻标签会输出「**a****b**」，Obsidian 的解析器切不动四连星号交界，
+  // 会把星号当文字露出来；必须合并成单个标签。只合并真正紧邻（中间无任何节点）的兄弟，
+  // 绝不跨过文本节点，防止把「**a** 正文 **b**」的两段加粗错误拼接。
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (const el of Array.from(doc.querySelectorAll('strong, b, em, i'))) {
+      let n = el.nextSibling;
+      while (
+        n &&
+        n.nodeType === 1 &&
+        sameEmphasis((n as Element).tagName, el.tagName)
+      ) {
+        const after = n.nextSibling;
+        el.append(...Array.from(n.childNodes));
+        n.parentNode?.removeChild(n);
+        merged = true;
+        n = after;
+      }
+    }
+  }
 
   return doc.body?.innerHTML || html;
 }
@@ -334,12 +387,38 @@ export function extractArticle(html: string, url: string): {
       return null;
     }
 
+    // 知乎专用清洗：知乎标题形如「问题标题 - XX 的回答 - 知乎」或「问题标题 - 知乎」，
+    // 直接用会把尾巴带进笔记文件名；拆出问题标题作标题、回答者作作者
+    let zhihuTitle = article.title || extractTitle(doc);
+    let zhihuByline = article.byline || extractAuthor(doc);
+    if (isZhihuUrl(url)) {
+      const answerMatch = zhihuTitle.match(/^(.*?)\s*-\s*(.+?)\s*的?回答(\s*-\s*知乎)?\s*$/);
+      if (answerMatch) {
+        zhihuTitle = answerMatch[1];
+        if (!zhihuByline) zhihuByline = answerMatch[2];
+      } else {
+        zhihuTitle = zhihuTitle.replace(/\s*-\s*知乎\s*$/, '');
+      }
+      // 回答页的 data-zop 属性带权威作者名（{"authorName":"...","itemId":...}）
+      if (!zhihuByline) {
+        const zopRaw = doc.querySelector('.AnswerItem')?.getAttribute('data-zop');
+        if (zopRaw) {
+          try {
+            const zop = JSON.parse(zopRaw) as { authorName?: string };
+            if (zop.authorName) zhihuByline = zop.authorName;
+          } catch {
+            // data-zop 解析失败则忽略，作者留空
+          }
+        }
+      }
+    }
+
     return {
-      title: article.title || extractTitle(doc),
+      title: zhihuTitle,
       content: article.content,
       textContent: article.textContent,
       excerpt: article.excerpt || '',
-      byline: article.byline || extractAuthor(doc),
+      byline: zhihuByline,
       length: article.length,
     };
   } catch (error) {
@@ -443,6 +522,9 @@ export function generateFileName(title: string, template: string): string {
   // 清理文件名中的非法字符
   fileName = fileName
     .replace(/[\\/:*?"<>|]/g, '_')
+    // Obsidian 链接保留字符（#^[] 会把 openLinkText 拆成「路径 + 标题锚点」，
+    // 导致打开笔记时按截断路径新建出空笔记），直接剔除而不是替换
+    .replace(/[#\[\]^]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -468,7 +550,7 @@ export function generateFrontMatter(
 
   const lines: string[] = ['---'];
   
-  lines.push(`title: "${title.replace(/"/g, '\\"')}"`);
+  lines.push(`title: "${title.replace(/\r?\n/g, ' ').replace(/"/g, '\\"')}"`);
   
   if (settings.includeSourceUrl) {
     lines.push(`source: ${url}`);
@@ -479,11 +561,13 @@ export function generateFrontMatter(
   }
   
   if (byline) {
-    lines.push(`author: "${byline.replace(/"/g, '\\"')}"`);
+    lines.push(`author: "${byline.replace(/\r?\n/g, ' ').replace(/"/g, '\\"')}"`);
   }
   
   if (excerpt) {
-    lines.push(`description: "${excerpt.replace(/"/g, '\\"').substring(0, 200)}"`);
+    // YAML 双引号标量不允许裸换行（会整块解析失败 → Obsidian 显示「无效属性」），压成空格
+    const cleanExcerpt = excerpt.replace(/\r?\n/g, ' ').replace(/"/g, '\\"').substring(0, 200);
+    lines.push(`description: "${cleanExcerpt}"`);
   }
   
   lines.push('tags: [web-clip]');
@@ -544,19 +628,51 @@ export async function clipWebPage(
   onProgress?: (message: string) => void
 ): Promise<TFile> {
   try {
-    // 1. 抓取网页
-    onProgress?.('正在抓取网页内容...');
-    const html = await fetchWebPage(url);
+    let html: string;
+    // 小红书走独立提取器（SSR + INITIAL_STATE 解析），产出与 extractArticle 同形的结构
+    let prebuilt: Awaited<ReturnType<typeof extractXhsArticle>> | null = null;
+    // 来源链接（小红书会被规范化为带 token 的永久形态）
+    let sourceUrl = url;
+
+    if (isZhihuUrl(url)) {
+      // 知乎：zse-ck 反爬拦截纯 HTTP 请求，改用本机 Chrome 无头渲染取 DOM（仅桌面端）
+      html = await fetchZhihuRenderedHtml(url, onProgress);
+    } else if (isXhsUrl(url)) {
+      // 小红书：分享链接自带 xsec_token，纯 HTTP 抓 SSR 解析笔记数据；图片带时效签名需立即本地化
+      onProgress?.('正在抓取小红书笔记...');
+      prebuilt = await extractXhsArticle(url, onProgress);
+      sourceUrl = prebuilt.canonicalUrl;
+      const imgMap = await localizeXhsImages(prebuilt.images, vault, settings, onProgress);
+      for (const [remote, local] of imgMap) {
+        prebuilt.article.content = prebuilt.article.content.split(remote).join(local);
+      }
+      html = '';
+    } else if (isWeiboUrl(url)) {
+      // 微博：游客系统拦截纯 HTTP 请求，走本机 Chrome 无头渲染（仅桌面端）；
+      // sinaimg 对非微博 Referer 返回 403（Obsidian 内加载即挂），配图需下载到本地
+      onProgress?.('正在抓取微博...');
+      prebuilt = await extractWeiboArticle(url, onProgress);
+      sourceUrl = prebuilt.canonicalUrl;
+      const imgMap = await localizeWeiboImages(prebuilt.images, vault, settings, onProgress);
+      for (const [remote, local] of imgMap) {
+        prebuilt.article.content = prebuilt.article.content.split(remote).join(local);
+      }
+      html = '';
+    } else {
+      // 1. 抓取网页
+      onProgress?.('正在抓取网页内容...');
+      html = await fetchWebPage(url);
+    }
 
     // 2. 提取正文（先提取，后清洗，避免误删正文元素）
     onProgress?.('正在提取正文...');
-    const article = extractArticle(html, url);
-    
+    const article = prebuilt ? prebuilt.article : extractArticle(html, url);
+
     if (!article) {
       throw new Error('无法提取网页正文,该页面可能需要 JavaScript 渲染或不支持');
     }
 
-    if (article.length < 100) {
+    if (article.length < 100 && !prebuilt) {
       throw new Error('提取的内容过少,可能不是有效的文章页面');
     }
 
@@ -571,7 +687,7 @@ export async function clipWebPage(
     // 5. 生成完整内容
     const frontMatter = generateFrontMatter(
       article.title,
-      url,
+      sourceUrl,
       settings,
       article.excerpt,
       article.byline

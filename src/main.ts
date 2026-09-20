@@ -141,7 +141,7 @@ class WebClipperModal extends Modal {
 		const urlInput = contentEl.createEl('input', {
 			type: 'text',
 			cls: 'ewc-input',
-			attr: { placeholder: '粘贴网页链接' },
+			attr: { placeholder: '粘贴网页链接或分享文案' },
 		});
 
 		navigator.clipboard.readText().then(clipText => {
@@ -151,6 +151,16 @@ class WebClipperModal extends Modal {
 
 		urlInput.addEventListener('input', (e: Event) => {
 			this.url = (e.target as HTMLInputElement).value;
+		});
+		// 粘贴时自动清洗：分享文案整段粘贴（知乎/小红书「标题 + 链接」等），只保留其中的 URL
+		urlInput.addEventListener('paste', (e: ClipboardEvent) => {
+			const text = e.clipboardData?.getData('text/plain') ?? '';
+			const cleaned = extractUrl(text);
+			if (cleaned) {
+				e.preventDefault();
+				urlInput.value = cleaned;
+				this.url = cleaned;
+			}
 		});
 		urlInput.addEventListener('keydown', (e: KeyboardEvent) => {
 			if (e.key === 'Enter' && !this.isProcessing) this.doClip();
@@ -361,7 +371,8 @@ class WebClipperModal extends Modal {
 
 	async doClip() {
 		if (this.isProcessing) return;
-		const url = this.url.trim();
+		// 支持直接粘贴分享文案整段文本（如小红书「标题+短链+链接」），自动提取其中的 URL
+		const url = extractUrl(this.url.trim()) || this.url.trim();
 		if (!url) { new Notice('请输入网页链接'); return; }
 		if (!url.startsWith('http://') && !url.startsWith('https://')) { new Notice('请输入有效的 URL'); return; }
 

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="GPXmw5oyWFChzxvJOHVbMR">
+<head data-page-node-id="zel7wS2N7CCrveHE5iumbA">
+<meta charset="UTF-8" data-page-node-id="qND53rkZ5cHQ7bRL8HpN9A">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="4Mg4UlDj8j9Zg7A3pRDzbc">
+<title>Easy Web Clipper — 窗口拖拽 / 缩放预览</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+    background: #1e1e1e;
+    color: #dcddde;
+    overflow: hidden;
+  }
+  .tip {
+    position: fixed;
+    left: 20px;
+    bottom: 20px;
+    font-size: 12px;
+    line-height: 1.9;
+    color: #888;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px 16px;
+    user-select: none;
+  }
+  .tip b { color: #dcddde; font-weight: 500; }
+  .tip .reset {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: #dcddde;
+    border: 1px solid #444;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  /* ===== 与插件 styles.css 等价的窗口样式 ===== */
+  .modal-container {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: flex-start;      /* 关掉默认居中 */
+    justify-content: flex-start;
+    padding: 0;
+  }
+  .modal {
+    position: fixed;
+    margin: 0;
+    padding: 0;
+    max-width: none;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #1e1e1e;
+    border: 1px solid #3a3a3a;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: #dcddde;
+    background: #262626;
+    border-bottom: 1px solid #3a3a3a;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  .modal-header:active { cursor: grabbing; }
+  .modal-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    padding: 16px;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .resize-handle { position: absolute; top: 0; bottom: 0; z-index: 20; touch-action: none; }
+  .r-w { left: 0; width: 10px; cursor: ew-resize; }
+  .r-e { right: 0; width: 10px; cursor: ew-resize; }
+
+  body.dragging, body.dragging * { user-select: none !important; cursor: grabbing !important; }
+  body.resizing, body.resizing * { user-select: none !important; }
+  body.resizing-n, body.resizing-s, body.resizing-n *, body.resizing-s * { cursor: ns-resize !important; }
+  body.resizing-e, body.resizing-w, body.resizing-e *, body.resizing-w * { cursor: ew-resize !important; }
+  body.resizing-ne, body.resizing-sw, body.resizing-ne *, body.resizing-sw * { cursor: nesw-resize !important; }
+  body.resizing-nw, body.resizing-se, body.resizing-nw *, body.resizing-se * { cursor: nwse-resize !important; }
+
+  /* 内容样式（与插件一致） */
+  .url-input {
+    display: block; width: 100%; min-width: 0;
+    border: 1px solid #3a3a3a; border-radius: 6px; outline: none;
+    background: #1e1e1e; font-size: 14px; color: #dcddde; font-family: inherit;
+    padding: 10px 12px; margin-bottom: 20px;
+  }
+  .url-input:focus { border-color: #7c3aed; }
+  .label { font-size: 11px; color: #888; letter-spacing: .08em; margin-bottom: 4px; }
+  .path { font-size: 13px; margin-bottom: 4px; overflow-wrap: anywhere; word-break: break-all; }
+  .hint { font-size: 11px; color: #666; margin-bottom: 20px; }
+  .actions {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    justify-content: space-between; align-items: center;
+    margin-top: 20px; padding-top: 16px; border-top: 1px solid #3a3a3a;
+  }
+  .btn { flex: 0 0 auto; font-size: 13px; padding: 8px 20px; border-radius: 6px; cursor: pointer; user-select: none; }
+  .btn-cancel { color: #999; border: 1px solid #3a3a3a; background: transparent; }
+  .btn-clip { color: #fff; border: none; background: #2e7d32; font-weight: 500; padding: 8px 24px; }
+</style>
+</head>
+<body data-page-node-id="TOUqIJQvtfU92wlIJDfW8H">
+
+<div class="modal-container" id="container" data-page-node-id="kMqkpO7BgBQcV8BqMek3EG">
+  <div class="modal" id="modal" data-page-node-id="g8n6MbsnzwyXKwgSqXpteh">
+    <div class="modal-header" id="header" data-page-node-id="zdwYkYzlxceXS5XRWPFRGL">网页剪藏</div>
+    <div class="modal-content" data-page-node-id="K19Xd6Hr7Gg3jc6XJs7LLo">
+      <input class="url-input" type="text" placeholder="粘贴网页链接" value="https://blog.mozilla.org/firefox-reader-view" data-page-node-id="3Wx1jLah1I5g10iPV7xenj">
+      <div class="label" data-page-node-id="hPfzZJjYYmc9c2J26B72JH">保存至</div>
+      <div class="path" data-page-node-id="J3xo6MK0YrpvqNVi8DQUpX">EasyWebClipper</div>
+      <div class="hint" data-page-node-id="SZaOhpOo0mucPE8jBS6KHn">可在设置中修改默认保存路径</div>
+      <div class="actions" data-page-node-id="FdMsYVFd4PxhowKVQxatTP">
+        <span class="btn btn-cancel" data-page-node-id="JPLDzcrRvlcwcESpQ1PBsG">取消</span>
+        <span class="btn btn-clip" data-page-node-id="QSVkOpRFSBhPg5KzmRR25B">剪藏</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tip" data-page-node-id="8y1YcxN45v4dDJJKSeFSvr">
+  <b data-page-node-id="QrtDurREOsaWMjCRXnW3Zd">拖拽</b>：按住顶部标题栏移动窗口<br data-page-node-id="2uGM3wzYb6KtWAtryybFSr">
+  <b data-page-node-id="I05H3u2RDoF95dqOyPZnko">缩放</b>：拖动左右边缘调宽度（最小 320），高度随内容自适应<br data-page-node-id="J6qYSPklEwsQWe04wXieB6">
+  <b data-page-node-id="8chuvxUUXuEC1wJBue9ON8">记忆</b>：位置与大小写入 localStorage，刷新后恢复<br data-page-node-id="V5fW8r5hcaDTXj6LaIDk0K">
+  <b data-page-node-id="BQraRKl5se7i5x8K10XnRE">自适应</b>：窗口变小时内容滚动，不会被截断
+  <div class="reset" id="reset" data-page-node-id="3ZDSt10iPqlFfOIjKAEhIX">恢复默认位置</div>
+</div>
+
+<script>
+(function () {
+  const MIN_W = 320, DEFAULT_W = 460, MARGIN = 24;
+  const KEY = 'ewc-demo-rect';
+  const modal = document.getElementById('modal');
+  const header = document.getElementById('header');
+
+  // 缩放手柄：只有左右两条边（宽度可调，高度自适应）
+  ['w','e'].forEach(dir => {
+    const el = document.createElement('div');
+    el.className = 'resize-handle r-' + dir;
+    el.addEventListener('pointerdown', e => startResize(e, dir));
+    modal.appendChild(el);
+  });
+
+  function clampWidth(w) {
+    return Math.round(Math.max(MIN_W, Math.min(w, window.innerWidth)));
+  }
+  function setWidth(w) { modal.style.width = clampWidth(w) + 'px'; }
+  function applyMaxHeight() {
+    modal.style.maxHeight = Math.max(120, window.innerHeight - MARGIN * 2) + 'px';
+  }
+  function setPosition(x, y) {
+    const w = modal.offsetWidth, h = modal.offsetHeight;
+    const left = Math.min(Math.max(0, x), Math.max(0, window.innerWidth - w));
+    const top = Math.min(Math.max(0, y), Math.max(0, window.innerHeight - h));
+    modal.style.left = Math.round(left) + 'px';
+    modal.style.top = Math.round(top) + 'px';
+  }
+  function save() {
+    const r = modal.getBoundingClientRect();
+    localStorage.setItem(KEY, JSON.stringify({ x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) }));
+  }
+
+  // 初始布局：高度交给内容，只定宽度
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { saved = null; }
+  applyMaxHeight();
+  setWidth(saved && saved.width > 0 ? saved.width : DEFAULT_W);
+  if (saved && (saved.x !== 0 || saved.y !== 0)) {
+    setPosition(saved.x, saved.y);
+  } else {
+    setPosition((window.innerWidth - modal.offsetWidth) / 2, (window.innerHeight - modal.offsetHeight) / 2.4);
+  }
+
+  // 拖拽
+  header.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest('input, textarea, select, button, a')) return;
+    const rect = modal.getBoundingClientRect();
+    const ox = e.clientX - rect.left, oy = e.clientY - rect.top;
+    document.body.classList.add('dragging');
+    const onMove = ev => {
+      setPosition(ev.clientX - ox, ev.clientY - oy);
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove, true);
+      document.removeEventListener('pointerup', onUp, true);
+      document.body.classList.remove('dragging');
+      save();
+    };
+    document.addEventListener('pointermove', onMove, true);
+    document.addEventListener('pointerup', onUp, true);
+    e.preventDefault();
+  });
+
+  // 缩放
+  function startResize(e, dir) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const start = modal.getBoundingClientRect();
+    const ox = e.clientX;
+    document.body.classList.add('resizing', 'resizing-' + dir);
+    const onMove = ev => {
+      const dx = ev.clientX - ox;
+      let left = start.left;
+      let width = dir === 'e' ? start.width + dx : start.width - dx;
+      if (dir === 'w') left = start.left + dx;
+      if (width < MIN_W) {
+        if (dir === 'w') left = start.left + start.width - MIN_W;
+        width = MIN_W;
+      }
+      setWidth(width);
+      setPosition(left, modal.getBoundingClientRect().top);
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove, true);
+      document.removeEventListener('pointerup', onUp, true);
+      document.body.classList.remove('resizing', 'resizing-' + dir);
+      save();
+    };
+    document.addEventListener('pointermove', onMove, true);
+    document.addEventListener('pointerup', onUp, true);
+  }
+
+  // 浏览器窗口变化
+  window.addEventListener('resize', () => {
+    const r = modal.getBoundingClientRect();
+    applyMaxHeight();
+    setPosition(r.left, r.top);
+  });
+
+  document.getElementById('reset').addEventListener('click', () => {
+    localStorage.removeItem(KEY);
+    applyMaxHeight();
+    setWidth(DEFAULT_W);
+    setPosition((window.innerWidth - modal.offsetWidth) / 2, (window.innerHeight - modal.offsetHeight) / 2.4);
+  });
+})();
+</script>
+</body>
+</html>
