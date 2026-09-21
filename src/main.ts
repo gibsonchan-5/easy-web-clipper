@@ -500,6 +500,47 @@ class WebClippersSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName('视频字幕翻译')
+			.setDesc('剪藏 YouTube / B站视频时，非目标语言的字幕每段附微软机翻对照（关闭则只保留原字幕）')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.youtubeTranslate)
+					.onChange(async (value) => {
+						this.plugin.settings.youtubeTranslate = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName('B站登录凭据（SESSDATA）')
+			.setDesc('可选。B站字幕接口需要登录态：在浏览器登录B站后，从开发者工具 → 应用 → Cookie 中复制 SESSDATA 的值粘贴到此处（仅保存在本地）。留空则剪B站视频时只保留嵌入播放器与 UP主简介')
+			.addText((text) => {
+				text.setPlaceholder('粘贴 SESSDATA 值')
+					.setValue(this.plugin.settings.bilibiliSessdata)
+					.onChange(async (value) => {
+						this.plugin.settings.bilibiliSessdata = value.trim();
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+			});
+
+		new Setting(containerEl)
+			.setName('翻译目标语言')
+			.setDesc('YouTube 字幕翻译使用的目标语言（仅当开启字幕翻译时生效）')
+			.addDropdown((dropdown) => {
+				dropdown.addOption('zh-Hans', '简体中文');
+				dropdown.addOption('zh-Hant', '繁體中文');
+				dropdown.addOption('en', 'English');
+				dropdown.addOption('ja', '日本語');
+				dropdown.addOption('ko', '한국어');
+				dropdown.setValue(this.plugin.settings.youtubeTranslateTarget);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.youtubeTranslateTarget = value || 'zh-Hans';
+					await this.plugin.saveSettings();
+				});
+			});
+
+		new Setting(containerEl)
 			.setName('剪藏窗口')
 			.setDesc('可拖拽标题栏移动窗口，也可拖动左右边缘调整宽度（高度随内容自适应）。位置与宽度会自动记住，若窗口跑出屏幕可点此恢复。')
 			.addButton((button) =>

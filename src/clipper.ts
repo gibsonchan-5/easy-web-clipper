@@ -17,6 +17,8 @@ import { WebClippersSettings } from './settings';
 import { isZhihuUrl, fetchZhihuRenderedHtml } from './zhihu';
 import { isXhsUrl, extractXhsArticle, localizeXhsImages } from './xhs';
 import { isWeiboUrl, extractWeiboArticle, localizeWeiboImages } from './weibo';
+import { isYoutubeUrl, extractYoutubeArticle } from './youtube';
+import { isBilibiliUrl, extractBilibiliArticle } from './bilibili';
 
 /**
  * 抓取网页 HTML
@@ -658,6 +660,20 @@ export async function clipWebPage(
         prebuilt.article.content = prebuilt.article.content.split(remote).join(local);
       }
       html = '';
+    } else if (isYoutubeUrl(url)) {
+      // YouTube：InnerTube API 取视频信息与字幕，产出成品 Markdown（嵌入播放器 + 时间戳字幕，
+      // 可选微软机翻对照）；页面导航/广告等一概不进笔记
+      onProgress?.('正在抓取 YouTube 视频...');
+      prebuilt = await extractYoutubeArticle(url, settings, onProgress);
+      sourceUrl = prebuilt.canonicalUrl;
+      html = '';
+    } else if (isBilibiliUrl(url)) {
+      // B站：view API（无需登录）取视频信息，字幕接口需登录态（可选 SESSDATA）；
+      // 产出成品 Markdown（iframe 嵌入播放器 + 时间戳字幕），无字幕降级为简介
+      onProgress?.('正在抓取B站视频...');
+      prebuilt = await extractBilibiliArticle(url, settings, onProgress);
+      sourceUrl = prebuilt.canonicalUrl;
+      html = '';
     } else {
       // 1. 抓取网页
       onProgress?.('正在抓取网页内容...');
@@ -676,13 +692,15 @@ export async function clipWebPage(
       throw new Error('提取的内容过少,可能不是有效的文章页面');
     }
 
-    // 3. 后清洗（在 Readability 输出上清洗，不影响提取效果）
-    onProgress?.('正在清洗页面内容...');
-    const cleanedContent = cleanExtractedContent(article.content, url);
+    // 3. 后清洗（在 Readability 输出上清洗，不影响提取效果）；
+    // YouTube 的 prebuilt.markdown 是成品正文，跳过清洗与转换，避免 Turndown 破坏嵌入语法
+    const cleanedContent =
+      prebuilt?.markdown != null ? '' : cleanExtractedContent(article.content, url);
 
     // 4. 转换为 Markdown
     onProgress?.('正在转换为 Markdown...');
-    const markdown = htmlToMarkdown(cleanedContent, settings);
+    const markdown =
+      prebuilt?.markdown != null ? prebuilt.markdown : htmlToMarkdown(cleanedContent, settings);
 
     // 5. 生成完整内容
     const frontMatter = generateFrontMatter(

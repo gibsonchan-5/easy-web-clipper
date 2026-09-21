@@ -16,6 +16,12 @@ export interface WebClippersSettings {
 	modalRect: ModalRect | null;
 	/** 布局记录的版本号，规则变更时用于作废旧记录 */
 	modalRectVersion: number;
+	/** YouTube：开启后非目标语言字幕自动附微软机翻对照（默认关） */
+	youtubeTranslate: boolean;
+	/** YouTube 翻译目标语言（BCP-47，如 zh-Hans） */
+	youtubeTranslateTarget: string;
+	/** B站登录凭据（可选）：字幕接口需要登录态，留空则只剪嵌入播放器与简介 */
+	bilibiliSessdata: string;
 }
 
 export const DEFAULT_SETTINGS: WebClippersSettings = {
@@ -27,6 +33,9 @@ export const DEFAULT_SETTINGS: WebClippersSettings = {
 	openAfterClip: true,
 	modalRect: null,
 	modalRectVersion: 0,
+	youtubeTranslate: false,
+	youtubeTranslateTarget: 'zh-Hans',
+	bilibiliSessdata: '',
 };
 
 /** 布局记录版本：规则变更（如改为只记宽度）时 +1，旧记录自动作废 */
